@@ -1,0 +1,12 @@
+MAPPING_FILE = "data/gt_mapping.csv"
+TIER_FILE = "data/companies_with_tiers.csv"
+COMPANY_TESLA = "Tesla Inc"
+COMPANY_BMW = "Bayerische Motoren Werke AG"
+COMPANY_MERC = "Mercedes-Benz Group AG"
+
+SUPPLIER_ID = "Supplier"
+SUPPLIER_INDUSTRY_ID = "Supplier Industry"
+SUPPLIER_COUNTRY_ID = "Supplier Country"
+CUSTOMER_ID = "Customer"
+CUSTOMER_INDUSTRY_ID = "Customer Industry"
+CUSTOMER_COUNTRY_ID = "Customer Country"

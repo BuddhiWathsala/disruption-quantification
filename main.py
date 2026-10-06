@@ -1,0 +1,256 @@
+import csv
+import json
+import os
+import pandas as pd
+
+import configs
+from configs import *
+
+
+class Company(object):
+    def __init__(self, adjmat, companies, labels, indices):
+        self.adjmat = adjmat
+        self.companies = companies
+        self.labels = labels
+        self.indices = indices
+
+class SupplyChain(object):
+    def __init__(self, adjmat, companies, countries, industries, company_labels):
+        self.adjmat = adjmat
+        self.companies = companies
+        self.countries = countries
+        self.industries = industries
+        self.company_labels = company_labels
+
+
+# Read GT Mapping
+def read_mapping(filename):
+    mapping = {}
+    with open(filename) as f:
+        for row in csv.DictReader(f):
+            mapping[row["Case"]] = row["Similar Disruption"]
+    return mapping
+
+
+# Read and return the content of a disruption JSON file for a given filename.
+def read_scenario(filename, directory="data/gt"):
+    scenario = {}
+    file_path = os.path.join(directory, filename + ".json")
+    with open(file_path) as f:
+        scenario = json.load(f)
+    return scenario
+
+
+def load_entire_supply_chain(filename) -> SupplyChain:
+    dataset = []
+    with open(filename) as f:
+        reader = csv.reader(f)
+        header = next(reader)
+        for row in reader:
+            dataset.append(row[0:6])
+    extracted_cols = [SUPPLIER_ID, SUPPLIER_INDUSTRY_ID, SUPPLIER_COUNTRY_ID,
+                      CUSTOMER_ID, CUSTOMER_INDUSTRY_ID, CUSTOMER_COUNTRY_ID]
+    df = pd.DataFrame(dataset, columns=extracted_cols)
+    countries = list(set(df[CUSTOMER_COUNTRY_ID].unique().tolist() + df[SUPPLIER_COUNTRY_ID].unique().tolist()))
+    countries.sort()
+    countries_map = {}
+    for i in range(len(countries)):
+        countries_map[countries[i]] = i
+
+    industries = list(set(df[CUSTOMER_INDUSTRY_ID].unique().tolist() + df[SUPPLIER_INDUSTRY_ID].unique().tolist()))
+    industries.sort()
+    industries_map = {}
+    for i in range(len(industries)):
+        industries_map[industries[i]] = i+1
+
+    companies = list(set(df[SUPPLIER_ID].unique().tolist() + df[CUSTOMER_ID].unique().tolist()))
+    companies.sort()
+    companies_map = {}
+    company_labels = {}
+    for i in range(len(companies)):
+        companies_map[companies[i]] = i
+
+    companies = pd.concat([
+        df[[CUSTOMER_ID, CUSTOMER_INDUSTRY_ID]].set_axis(["company", "industry"], axis=1),
+        df[[SUPPLIER_ID, SUPPLIER_INDUSTRY_ID]].set_axis(["company", "industry"], axis=1),
+    ]).drop_duplicates()
+
+    company_labels.update(
+        zip(companies["company"].map(companies_map), companies["industry"].map(industries_map))
+    )
+
+    adjmat = [[0 for i in range(len(companies))] for i in range(len(companies))]
+    for row in df.iterrows():
+        adjmat[companies_map[row[1][SUPPLIER_ID]]][companies_map[row[1][CUSTOMER_ID]]] = 1
+    return SupplyChain(adjmat, companies_map, countries_map, industries_map, company_labels)
+
+def origin_company_id(companies, name):
+    if "BMW" in name:
+        return companies["Bayerische Motoren Werke AG"]
+    elif "MERC" in name:
+        return companies["Mercedes-Benz Group AG"]
+    return companies["Tesla Inc"]
+
+def load_company_graph(supply_chain: SupplyChain, origin_company) -> Company:
+
+    company_id = origin_company_id(supply_chain.companies, origin_company)
+    # adjmat[i][j] = 1 means i supplies j
+    n = len(supply_chain.adjmat)
+    suppliers = [[] for _ in range(n)]
+    for i in range(n):
+        row = supply_chain.adjmat[i]
+        for j in range(n):
+            if row[j]:
+                suppliers[j].append(i)
+
+    # Collect every company reachable from company_id by following directed edges
+    def reachable(neighbours):
+        r_visited = {company_id}
+        queue = [company_id]
+        while queue:
+            node = queue.pop()
+            for nb in neighbours[node]:
+                if nb not in r_visited:
+                    r_visited.add(nb)
+                    queue.append(nb)
+        return r_visited
+
+    visited = {company_id}
+    visited |= reachable(suppliers)
+
+    # Build the sub adjacency matrix, preserving the original index order
+    sub_companies = sorted(visited)
+    sub_adjmat = [[supply_chain.adjmat[i][j] for j in sub_companies] for i in sub_companies]
+
+    sub_labels = [supply_chain.company_labels[i] for i in sub_companies]
+    sub_indices = {old: new for new, old in enumerate(sub_companies)}
+    return Company(sub_adjmat, sub_companies, sub_labels, sub_indices)
+
+def load_company_tiers(supply_chain: SupplyChain, company: Company, origin_name):
+    visited = set()
+    tier1 = set()
+    tier2 = set()
+    tier3 = set()
+    tier4 = set()
+    n = len(company.adjmat)
+    origin_id = origin_company_id(supply_chain.companies, origin_name)
+    origin_id = company.companies.index(origin_id)
+    # Tier 1
+    for i in range(n):
+        if company.adjmat[i][origin_id] == 1:
+            tier1.add(i)
+            visited.add(i)
+
+    # Tier 2
+    for i in tier1:
+        for j in range(n):
+            if company.adjmat[j][i] == 1 and j not in visited:
+                tier2.add(j)
+                visited.add(j)
+
+    # Tier 3
+    for i in tier2:
+        for j in range(n):
+            if company.adjmat[j][i] == 1 and j not in visited:
+                tier3.add(j)
+                visited.add(j)
+
+    # Tier 4
+    for i in tier3:
+        for j in range(n):
+            if company.adjmat[j][i] == 1 and j not in visited:
+                tier4.add(j)
+
+    idx_to_company = {}
+    for name, idx in supply_chain.companies.items():
+        idx_to_company[idx] = name
+
+    def get_companies_from_tiers(_supply_chain: SupplyChain, _company: Company, t_indices, _idx_to_company):
+        companies = [_idx_to_company[o] for o in t_indices]
+        return get_subgraph_for_companies(_supply_chain, companies)
+
+    t1_subgraph = get_companies_from_tiers(supply_chain, company, tier1, idx_to_company)
+    t2_subgraph = get_companies_from_tiers(supply_chain, company, tier2, idx_to_company)
+    t3_subgraph = get_companies_from_tiers(supply_chain, company, tier3, idx_to_company)
+    t4_subgraph = get_companies_from_tiers(supply_chain, company, tier4, idx_to_company)
+
+    return [t1_subgraph, t2_subgraph, t3_subgraph, t4_subgraph]
+
+
+def get_subgraph_for_companies(supply_chain: SupplyChain, selected_companies):
+    selected_company_indices = []
+    selected_labels = []
+    for company in selected_companies:
+        c_id = supply_chain.companies[company]
+        selected_company_indices.append(c_id)
+        selected_labels.append(supply_chain.company_labels[c_id])
+
+    def extract_subgraph(adjmat, vertices):
+        sub_n = len(vertices)
+        _subgraph_adjmat = [[0 for _ in range(sub_n)] for _ in range(sub_n)]
+        _o2c_index = {}
+        for i in range(sub_n):
+            _o2c_index[vertices[i]] = i
+        for i in range(sub_n):
+            for j in range(sub_n):
+                if adjmat[vertices[i]][vertices[j]] == 1:
+                    _subgraph_adjmat[i][j] = 1
+        return _subgraph_adjmat, _o2c_index
+
+    subgraph_adjmat, o2c_index = extract_subgraph(supply_chain.adjmat, selected_company_indices)
+    return Company(subgraph_adjmat, selected_company_indices, selected_labels, o2c_index)
+
+
+def get_tier_subgraphs_from_json(supply_chain: SupplyChain, scenario):
+
+    def find_tier_companies(sc, tier_no):
+        tier_name = ""
+        companies = []
+        if tier_no == 1:
+            tier_name = "tier_1"
+        elif tier_no == 2:
+            tier_name = "tier_2"
+        elif tier_no == 3:
+            tier_name = "tier_3"
+        elif tier_no == 4:
+            tier_name = "tier_4"
+        else:
+            return companies
+        paths = scenario["kg_results"][tier_name]
+        for path in paths:
+            companies.append(path[tier_no]["company"])
+        return companies
+
+    tier1_companies = find_tier_companies(scenario, tier_no=1)
+    tier2_companies = find_tier_companies(scenario, tier_no=2)
+    tier3_companies = find_tier_companies(scenario, tier_no=3)
+    tier4_companies = find_tier_companies(scenario, tier_no=4)
+
+    t1_subgraph = get_subgraph_for_companies(supply_chain, tier1_companies)
+    t2_subgraph = get_subgraph_for_companies(supply_chain, tier2_companies)
+    t3_subgraph = get_subgraph_for_companies(supply_chain, tier3_companies)
+    t4_subgraph = get_subgraph_for_companies(supply_chain, tier4_companies)
+
+    return [t1_subgraph, t2_subgraph, t3_subgraph, t4_subgraph]
+
+
+
+
+def __main__():
+    mapping = read_mapping(configs.MAPPING_FILE)
+    test_file = "TSLA_SC002"
+    company_name = configs.COMPANY_TESLA
+    scenario = read_scenario(test_file, directory="data\\gt")
+    supply_chain = load_entire_supply_chain("data/supplychainKG.csv")
+    # Get tier graphs from history
+    history_tier_subgraphs = get_tier_subgraphs_from_json(supply_chain, scenario)
+
+
+    # Get tier graphs from company graph
+    company = load_company_graph(supply_chain, origin_company=test_file)
+    origin_id = origin_company_id(supply_chain.companies, test_file)
+    current_tier_subgraphs = load_company_tiers(supply_chain, company, company_name)
+
+    # Compare one-by-one history_tier_subgraphs vs current_tier_subgraphs
+    print()
+__main__()
