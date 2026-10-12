@@ -79,9 +79,10 @@ def load_entire_supply_chain(filename) -> SupplyChain:
         zip(companies["company"].map(companies_map), companies["industry"].map(industries_map))
     )
 
-    adjmat = [[0 for i in range(len(companies))] for i in range(len(companies))]
+    adjmat = [[] for i in range(len(companies))]
     for row in df.iterrows():
-        adjmat[companies_map[row[1][SUPPLIER_ID]]][companies_map[row[1][CUSTOMER_ID]]] = 1
+        adjmat[companies_map[row[1][SUPPLIER_ID]]].append(companies_map[row[1][CUSTOMER_ID]])
+        adjmat[companies_map[row[1][CUSTOMER_ID]]].append(companies_map[row[1][SUPPLIER_ID]])
     return SupplyChain(adjmat, companies_map, countries_map, industries_map, company_labels)
 
 def origin_company_id(companies, name):
@@ -99,17 +100,17 @@ def load_company_graph(supply_chain: SupplyChain, origin_company) -> Company:
     suppliers = [[] for _ in range(n)]
     for i in range(n):
         row = supply_chain.adjmat[i]
-        for j in range(n):
-            if row[j]:
-                suppliers[j].append(i)
+        for j in row:
+            suppliers[j].append(i)
+
 
     # Collect every company reachable from company_id by following directed edges
-    def reachable(neighbours):
+    def reachable(_neighbours):
         r_visited = {company_id}
         queue = [company_id]
         while queue:
             node = queue.pop()
-            for nb in neighbours[node]:
+            for nb in _neighbours[node]:
                 if nb not in r_visited:
                     r_visited.add(nb)
                     queue.append(nb)
@@ -120,7 +121,14 @@ def load_company_graph(supply_chain: SupplyChain, origin_company) -> Company:
 
     # Build the sub adjacency matrix, preserving the original index order
     sub_companies = sorted(visited)
-    sub_adjmat = [[supply_chain.adjmat[i][j] for j in sub_companies] for i in sub_companies]
+    sub_companies_map = {}
+    for i, j in enumerate(sub_companies):
+        sub_companies_map[j] = i
+    sub_adjmat = [[] for _ in range(len(sub_companies))]
+    for i in range(len(sub_companies)):
+        neighbours = supply_chain.adjmat[sub_companies[i]]
+        intersection = list(set(neighbours) & set(sub_companies))
+        sub_adjmat[i] = [sub_companies_map[item] for item in intersection]
 
     sub_labels = [supply_chain.company_labels[i] for i in sub_companies]
     sub_indices = {old: new for new, old in enumerate(sub_companies)}
@@ -136,30 +144,29 @@ def load_company_tiers(supply_chain: SupplyChain, company: Company, origin_name)
     origin_id = origin_company_id(supply_chain.companies, origin_name)
     origin_id = company.companies.index(origin_id)
     # Tier 1
-    for i in range(n):
-        if company.adjmat[i][origin_id] == 1:
-            tier1.add(i)
-            visited.add(i)
+    tier1 |= set(company.adjmat[origin_id])
+    visited |= set(company.adjmat[origin_id])
 
     # Tier 2
+    elements = set()
     for i in tier1:
-        for j in range(n):
-            if company.adjmat[j][i] == 1 and j not in visited:
-                tier2.add(j)
-                visited.add(j)
+        elements |= set(company.adjmat[i])
+    tier2 = elements - visited
+    visited |= tier2
 
     # Tier 3
+    elements.clear()
     for i in tier2:
-        for j in range(n):
-            if company.adjmat[j][i] == 1 and j not in visited:
-                tier3.add(j)
-                visited.add(j)
+        elements |= set(company.adjmat[i])
+    tier3 = elements - visited
+    visited |= tier3
 
     # Tier 4
+    elements.clear()
     for i in tier3:
-        for j in range(n):
-            if company.adjmat[j][i] == 1 and j not in visited:
-                tier4.add(j)
+        elements |= set(company.adjmat[i])
+    tier4 = elements - visited
+    visited |= tier4
 
     idx_to_company = {}
     for name, idx in supply_chain.companies.items():
@@ -187,14 +194,13 @@ def get_subgraph_for_companies(supply_chain: SupplyChain, selected_companies):
 
     def extract_subgraph(adjmat, vertices):
         sub_n = len(vertices)
-        _subgraph_adjmat = [[0 for _ in range(sub_n)] for _ in range(sub_n)]
+        _subgraph_adjmat = [[] for _ in range(sub_n)]
         _o2c_index = {}
         for i in range(sub_n):
             _o2c_index[vertices[i]] = i
         for i in range(sub_n):
-            for j in range(sub_n):
-                if adjmat[vertices[i]][vertices[j]] == 1:
-                    _subgraph_adjmat[i][j] = 1
+            neighbours = list(set(adjmat[vertices[i]]) & set(vertices))
+            _subgraph_adjmat[i] = [vertices.index(o) for o in neighbours]
         return _subgraph_adjmat, _o2c_index
 
     subgraph_adjmat, o2c_index = extract_subgraph(supply_chain.adjmat, selected_company_indices)
@@ -205,7 +211,7 @@ def get_tier_subgraphs_from_json(supply_chain: SupplyChain, scenario):
 
     def find_tier_companies(sc, tier_no):
         tier_name = ""
-        companies = []
+        companies = set()
         if tier_no == 1:
             tier_name = "tier_1"
         elif tier_no == 2:
@@ -216,11 +222,13 @@ def get_tier_subgraphs_from_json(supply_chain: SupplyChain, scenario):
             tier_name = "tier_4"
         else:
             return companies
-        paths = scenario["kg_results"][tier_name]
+        paths = []
+        for i in range(N_TIERS):
+            paths += scenario["kg_results"][f"tier_{i+1}"]
         for path in paths:
-            companies.append(path[tier_no]["company"])
-        return companies
-
+            if len(path) > tier_no:
+                companies.add(path[tier_no]["company"])
+        return list(companies)
     tier1_companies = find_tier_companies(scenario, tier_no=1)
     tier2_companies = find_tier_companies(scenario, tier_no=2)
     tier3_companies = find_tier_companies(scenario, tier_no=3)

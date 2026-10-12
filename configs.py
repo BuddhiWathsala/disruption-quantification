@@ -10,3 +10,4 @@ SUPPLIER_COUNTRY_ID = "Supplier Country"
 CUSTOMER_ID = "Customer"
 CUSTOMER_INDUSTRY_ID = "Customer Industry"
 CUSTOMER_COUNTRY_ID = "Customer Country"
+N_TIERS = 4
