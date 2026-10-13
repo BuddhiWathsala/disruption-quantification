@@ -5,6 +5,7 @@ import pandas as pd
 
 import configs
 from configs import *
+from mcs import write_dimacs, run_symsplit
 
 
 class Company(object):
@@ -260,5 +261,14 @@ def __main__():
     current_tier_subgraphs = load_company_tiers(supply_chain, company, company_name)
 
     # Compare one-by-one history_tier_subgraphs vs current_tier_subgraphs
+    n = min(len(current_tier_subgraphs), len(history_tier_subgraphs))
+    for i in range(n):
+        p_company = history_tier_subgraphs[i]
+        t_company = current_tier_subgraphs[i]
+        p_file = write_dimacs(p_company)
+        t_file = write_dimacs(t_company)
+        _, stdout, stderr = run_symsplit(p_file, t_file)
+        print(stdout)
+        print(stderr)
     print()
 __main__()
