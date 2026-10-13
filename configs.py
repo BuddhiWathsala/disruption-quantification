@@ -11,3 +11,6 @@ CUSTOMER_ID = "Customer"
 CUSTOMER_INDUSTRY_ID = "Customer Industry"
 CUSTOMER_COUNTRY_ID = "Customer Country"
 N_TIERS = 4
+FEATURES_FILE = "data/company_features.csv"
+# Column of FEATURES_FILE written as the "f <vertex> <value>" lines in DIMACS files
+DIMACS_FEATURE = "pagerank"

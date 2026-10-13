@@ -5,23 +5,26 @@ import pandas as pd
 
 import configs
 from configs import *
+from features import load_company_features
 from mcs import write_dimacs, run_symsplit
 
 
 class Company(object):
-    def __init__(self, adjmat, companies, labels, indices):
+    def __init__(self, adjmat, companies, labels, indices, features):
         self.adjmat = adjmat
         self.companies = companies
         self.labels = labels
         self.indices = indices
+        self.features = features  # features[i]: feature dict of vertex i, or None if unknown
 
 class SupplyChain(object):
-    def __init__(self, adjmat, companies, countries, industries, company_labels):
+    def __init__(self, adjmat, companies, countries, industries, company_labels, company_features):
         self.adjmat = adjmat
         self.companies = companies
         self.countries = countries
         self.industries = industries
         self.company_labels = company_labels
+        self.company_features = company_features  # company index -> feature dict
 
 
 # Read GT Mapping
@@ -84,7 +87,11 @@ def load_entire_supply_chain(filename) -> SupplyChain:
     for row in df.iterrows():
         adjmat[companies_map[row[1][SUPPLIER_ID]]].append(companies_map[row[1][CUSTOMER_ID]])
         adjmat[companies_map[row[1][CUSTOMER_ID]]].append(companies_map[row[1][SUPPLIER_ID]])
-    return SupplyChain(adjmat, companies_map, countries_map, industries_map, company_labels)
+    features_by_name = load_company_features(configs.FEATURES_FILE)
+    company_features = {i: features_by_name[name] for name, i in companies_map.items()
+                        if name in features_by_name}
+    return SupplyChain(adjmat, companies_map, countries_map, industries_map, company_labels,
+                       company_features)
 
 def origin_company_id(companies, name):
     if "BMW" in name:
@@ -133,7 +140,8 @@ def load_company_graph(supply_chain: SupplyChain, origin_company) -> Company:
 
     sub_labels = [supply_chain.company_labels[i] for i in sub_companies]
     sub_indices = {old: new for new, old in enumerate(sub_companies)}
-    return Company(sub_adjmat, sub_companies, sub_labels, sub_indices)
+    sub_features = [supply_chain.company_features.get(i) for i in sub_companies]
+    return Company(sub_adjmat, sub_companies, sub_labels, sub_indices, sub_features)
 
 def load_company_tiers(supply_chain: SupplyChain, company: Company, origin_name):
     visited = set()
@@ -188,10 +196,12 @@ def load_company_tiers(supply_chain: SupplyChain, company: Company, origin_name)
 def get_subgraph_for_companies(supply_chain: SupplyChain, selected_companies):
     selected_company_indices = []
     selected_labels = []
+    selected_features = []
     for company in selected_companies:
         c_id = supply_chain.companies[company]
         selected_company_indices.append(c_id)
         selected_labels.append(supply_chain.company_labels[c_id])
+        selected_features.append(supply_chain.company_features.get(c_id))
 
     def extract_subgraph(adjmat, vertices):
         sub_n = len(vertices)
@@ -205,7 +215,8 @@ def get_subgraph_for_companies(supply_chain: SupplyChain, selected_companies):
         return _subgraph_adjmat, _o2c_index
 
     subgraph_adjmat, o2c_index = extract_subgraph(supply_chain.adjmat, selected_company_indices)
-    return Company(subgraph_adjmat, selected_company_indices, selected_labels, o2c_index)
+    return Company(subgraph_adjmat, selected_company_indices, selected_labels, o2c_index,
+                   selected_features)
 
 
 def get_tier_subgraphs_from_json(supply_chain: SupplyChain, scenario):

@@ -5,14 +5,17 @@ import subprocess
 import tempfile
 from typing import TYPE_CHECKING
 
+import configs
+
 if TYPE_CHECKING:  # main.py runs its pipeline on import, so only import for type hints
     from main import Company
 
 
-def write_dimacs(company: Company):
+def write_dimacs(company: Company, feature=configs.DIMACS_FEATURE):
     """
     Write graph g to a temporary DIMACS-format file (1-indexed vertices,
-    labels on 'n' lines) and return the file path.
+    labels on 'n' lines, the given feature on 'f' lines) and return the file path.
+    Vertices without that feature get no 'f' line.
     """
     adjlist = company.adjmat  # adjacency list: adjlist[i] holds i's neighbours
     n = len(adjlist)
@@ -24,6 +27,9 @@ def write_dimacs(company: Company):
         f.write(f"p edge {n} {len(edges)}\n")
         for i, label in enumerate(company.labels):
             f.write(f"n {i + 1} {label}\n")
+        for i, features in enumerate(company.features):
+            if features is not None and features.get(feature) is not None:
+                f.write(f"f {i + 1} {features[feature]}\n")
         for i, j in edges:
             f.write(f"e {i + 1} {j + 1}\n")
     return f.name
