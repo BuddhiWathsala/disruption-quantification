@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+import sys
 import time
 from collections import defaultdict, deque
 import numpy as np
@@ -75,9 +76,14 @@ def outcomes(firms, P, t0, eps=0.01, theta=0.05):
     out = {}
     for i, v in enumerate(firms):
         above = np.nonzero(g[i, t0:] > eps)[0]
+        ttr = 0 if above.size == 0 else above[-1] + 1
+        # Unmet orders in days of normal output = extra wait of an order placed on day t
+        backlog = np.cumsum(g[i, t0:])[:ttr]
         out[v] = {"peak_loss": g[i, t0:].max(),                    # Eq. 2
                   "integrated_loss": g[i, t0:].sum(),              # Eq. 3
-                  "ttr": 0 if above.size == 0 else above[-1] + 1}  # Eq. 4
+                  "ttr": ttr,                                      # Eq. 4
+                  "peak_lead_time": backlog.max() if ttr else 0.0,
+                  "cum_lead_time": backlog.sum()}
     footprint = {v for v, y in out.items() if y["peak_loss"] > theta}  # Eq. 5
     return out, footprint
 
@@ -105,11 +111,25 @@ def save_scenario(sid, firms, P, out, footprint):
     with open(os.path.join(OUT_DIR, f"{sid}_outcomes.csv"), "w", newline="",
               encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["firm", "peak_loss", "integrated_loss", "ttr", "in_footprint"])
+        w.writerow(["firm", "peak_loss", "integrated_loss", "ttr", "peak_lead_time",
+                    "cum_lead_time", "in_footprint"])
         for v in firms:
             y = out[v]
             w.writerow([v, f"{y['peak_loss']:.6f}", f"{y['integrated_loss']:.6f}",
-                        int(y["ttr"]), v in footprint])
+                        int(y["ttr"]), f"{y['peak_lead_time']:.6f}",
+                        f"{y['cum_lead_time']:.6f}", v in footprint])
+
+
+def rebuild_outcomes():
+    """Recompute every outcomes CSV from the saved production files, without re-simulating."""
+    for name in sorted(os.listdir(OUT_DIR)):
+        if name.endswith("_production.npz"):
+            sid = name[:-len("_production.npz")]
+            data = np.load(os.path.join(OUT_DIR, name))
+            firms, P = list(data["firms"]), data["P"]
+            out, footprint = outcomes(firms, P, PARAMS["t0"], PARAMS["eps"], PARAMS["theta"])
+            save_scenario(sid, firms, P, out, footprint)
+            print(f"{sid}: rebuilt outcomes for {len(firms)} firms")
 
 
 def main():
@@ -164,5 +184,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if "--outcomes-only" in sys.argv:
+        rebuild_outcomes()
+    else:
+        main()
 

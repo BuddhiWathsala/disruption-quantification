@@ -4,16 +4,18 @@ from collections import defaultdict
 import numpy as np
 
 import configs
+from data_gen import PARAMS
 
 KG_CSV = "data/supplychainKG.csv"
 FEATURES_CSV = "data/company_features.csv"
 
 FIELDS = ["company", "industry", "country", "majority_tier",
           "n_suppliers", "n_customers", "n_supplier_industries", "n_single_sourced_inputs",
-          "n_supplier_countries", "supplier_country_hhi", "pagerank"]
+          "n_supplier_countries", "supplier_country_hhi", "pagerank",
+          "inventory_cover", "substitute_share"]
 INT_FIELDS = {"majority_tier", "n_suppliers", "n_customers", "n_supplier_industries",
               "n_single_sourced_inputs", "n_supplier_countries"}
-FLOAT_FIELDS = {"supplier_country_hhi", "pagerank"}
+FLOAT_FIELDS = {"supplier_country_hhi", "pagerank", "inventory_cover", "substitute_share"}
 
 
 def _pagerank(nodes, edges, damping=0.85, iters=100, tol=1e-10):
@@ -81,6 +83,9 @@ def build_company_features(kg_path=KG_CSV, tier_path=configs.TIER_FILE, out_path
                 "n_supplier_countries": len(by_country),
                 "supplier_country_hhi": f"{hhi:.6f}",
                 "pagerank": f"{pagerank[c]:.8e}",
+                # No firm-level data: use the values data/simulated was generated with
+                "inventory_cover": PARAMS["inv_days"],
+                "substitute_share": PARAMS["substitution"],
             })
     return out_path
 

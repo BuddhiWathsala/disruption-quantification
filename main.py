@@ -7,6 +7,8 @@ import configs
 from configs import *
 from features import load_company_features
 from mcs import write_dimacs, run_symsplit
+from transfer import parse_symsplit_mapping, load_outcomes, predict_outcomes
+import numpy as np
 
 
 class Company(object):
@@ -271,6 +273,10 @@ def __main__():
     origin_id = origin_company_id(supply_chain.companies, test_file)
     current_tier_subgraphs = load_company_tiers(supply_chain, company, company_name)
 
+    idx_to_name = {idx: name for name, idx in supply_chain.companies.items()}
+    source_outcomes = load_outcomes(test_file)
+    B = np.array(configs.ADAPTATION_MATRIX)
+
     # Compare one-by-one history_tier_subgraphs vs current_tier_subgraphs
     n = min(len(current_tier_subgraphs), len(history_tier_subgraphs))
     for i in range(n):
@@ -281,5 +287,15 @@ def __main__():
         _, stdout, stderr = run_symsplit(p_file, t_file)
         print(stdout)
         print(stderr)
+        # Transfer the historical outcomes along the matching
+        pi = parse_symsplit_mapping(stdout)
+        predictions = predict_outcomes(pi, p_company, t_company, idx_to_name, source_outcomes,
+                                       configs.SOURCE_SEVERITY, configs.TARGET_SEVERITY,
+                                       configs.SOURCE_DURATION, configs.TARGET_DURATION,
+                                       configs.TRANSFER_METHOD, B)
+        print(f"Tier {i + 1}: {len(predictions)} predicted firms")
+        for firm, y in sorted(predictions.items(), key=lambda kv: -kv[1][0])[:5]:
+            print(f"  {firm}: peak cap.={y[0]:.3f} cum. cap.={y[1]:.3f} "
+                  f"peak lead time={y[2]:.1f} cum. lead time={y[3]:.1f}")
     print()
 __main__()
