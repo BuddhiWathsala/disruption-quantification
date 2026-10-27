@@ -8,6 +8,7 @@ from configs import *
 from features import load_company_features
 from mcs import write_dimacs, run_symsplit
 from transfer import parse_symsplit_mapping, load_outcomes, predict_outcomes
+from data_gen import run_id
 import numpy as np
 
 
@@ -274,7 +275,8 @@ def __main__():
     current_tier_subgraphs = load_company_tiers(supply_chain, company, company_name)
 
     idx_to_name = {idx: name for name, idx in supply_chain.companies.items()}
-    source_outcomes = load_outcomes(test_file)
+    source_outcomes = load_outcomes(run_id(test_file, configs.SOURCE_SEVERITY,
+                                             configs.SOURCE_DURATION))
     B = np.array(configs.ADAPTATION_MATRIX)
 
     # Compare one-by-one history_tier_subgraphs vs current_tier_subgraphs

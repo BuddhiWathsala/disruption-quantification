@@ -4,6 +4,7 @@ import os
 import numpy as np
 
 import configs
+from data_gen import RUNS_DIR
 
 # Order of the impact vector y = (peak capacity, cumulative capacity, peak lead time,
 # cumulative lead time degradation), i.e. the columns of B
@@ -22,10 +23,13 @@ def parse_symsplit_mapping(stdout):
     return list(zip(source, target))
 
 
-def load_outcomes(scenario_id, directory="data/simulated"):
-    """Read {firm: y} from a simulated outcomes CSV, y ordered as OUTCOME_FIELDS."""
+def load_outcomes(run, directory=RUNS_DIR):
+    """
+    Read {firm: y} from the outcomes CSV of one simulation run (data_gen.run_id), y ordered
+    as OUTCOME_FIELDS. Firms not in the file were not affected.
+    """
     outcomes = {}
-    with open(os.path.join(directory, f"{scenario_id}_outcomes.csv"), newline="",
+    with open(os.path.join(directory, f"{run}_outcomes.csv"), newline="",
               encoding="utf-8") as f:
         for r in csv.DictReader(f):
             outcomes[r["firm"]] = np.array([float(r[k]) for k in OUTCOME_FIELDS])

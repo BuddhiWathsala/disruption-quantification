@@ -4,7 +4,7 @@ from collections import defaultdict
 import numpy as np
 
 import configs
-from data_gen import PARAMS
+from data_gen import load_firm_attributes
 
 KG_CSV = "data/supplychainKG.csv"
 FEATURES_CSV = "data/company_features.csv"
@@ -59,6 +59,7 @@ def build_company_features(kg_path=KG_CSV, tier_path=configs.TIER_FILE, out_path
     companies = sorted(industry)
     edges = [(v, u) for v in companies for u in suppliers[v]]
     pagerank = _pagerank(companies, edges)
+    attributes = load_firm_attributes()   # sampled by data_gen.py; run it first
 
     with open(out_path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=FIELDS)
@@ -84,8 +85,8 @@ def build_company_features(kg_path=KG_CSV, tier_path=configs.TIER_FILE, out_path
                 "supplier_country_hhi": f"{hhi:.6f}",
                 "pagerank": f"{pagerank[c]:.8e}",
                 # No firm-level data: use the values data/simulated was generated with
-                "inventory_cover": PARAMS["inv_days"],
-                "substitute_share": PARAMS["substitution"],
+                "inventory_cover": f"{attributes[c]['inventory_cover']:.4f}",
+                "substitute_share": f"{attributes[c]['substitute_share']:.4f}",
             })
     return out_path
 

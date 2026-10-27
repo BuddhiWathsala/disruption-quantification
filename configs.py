@@ -24,7 +24,8 @@ TRANSFER_METHOD = "option1"
 # paper's example values for a source node with D = 15 days and s = 0.
 ADAPTATION_MATRIX = [[0.0, -1 / 15, -1 / 15, -2 / 15],
                      [-1.0, -1.0, -1.0, -1.0]]
-SOURCE_SEVERITY = 0.4   # severity data/simulated was generated with (data_gen.PARAMS)
+# Source severity and duration pick the simulated run (a grid point of data_gen.PARAMS)
+SOURCE_SEVERITY = 0.4
 TARGET_SEVERITY = 0.4   # severity of the new disruption
-SOURCE_DURATION = 60    # duration (days) data/simulated was generated with (data_gen.PARAMS)
+SOURCE_DURATION = 60    # days
 TARGET_DURATION = 60    # duration of the new disruption (only "exact" uses a change)
